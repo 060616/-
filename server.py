@@ -7,7 +7,7 @@ import hashlib
 from io import BytesIO
 
 app = Flask(__name__)
-CORS(app)  # 允许跨域请求
+CORS(app, resources={r"/*": {"origins": "*"}})  # 确保这行配置正确
 
 # 配置
 SAVE_DIR = "generated_cards"
@@ -15,21 +15,16 @@ if not os.path.exists(SAVE_DIR):
     os.makedirs(SAVE_DIR)
 
 # 字体设置
-try:
-    # Windows
-    font_path = "C:/Windows/Fonts/msyh.ttc"
-    if not os.path.exists(font_path):
-        # macOS
-        font_path = "/System/Library/Fonts/PingFang.ttc"
-except:
-    # 使用默认字体
+font_path = os.path.join(os.path.dirname(__file__), 'fonts', 'STZHONGS.TTF')
+if not os.path.exists(font_path):
+    print("警告：找不到字体文件，将使用默认字体")
     font_path = None
 
 @app.route('/')
 def index():
     """根路由处理"""
     return jsonify({
-        "message": "Server is running",
+        "message": "服务器正在运行",
         "endpoints": {
             "status": "/status",
             "generate": "/generate"

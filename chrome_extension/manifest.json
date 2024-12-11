@@ -4,22 +4,33 @@
         "version": "1.0",
         "description": "将选中的网页内容转换为精美卡片",
         "permissions": [
+            "activeTab",
             "contextMenus",
-            "storage",
-            "scripting",
-            "activeTab"
+            "tabs",
+            "notifications"
         ],
         "host_permissions": [
             "http://localhost:8000/*"
         ],
         "background": {
-            "service_worker": "background.js"
+            "service_worker": "background.js",
+            "type": "module"
         },
         "content_scripts": [{
             "matches": ["<all_urls>"],
-            "js": ["content.js"]
+            "exclude_matches": [
+                "*://chrome.google.com/*",
+                "*://*.chrome.google.com/*"
+            ],
+            "js": ["content.js"],
+            "run_at": "document_start",
+            "all_frames": false
         }],
         "action": {
             "default_popup": "popup.html"
-        }
+        },
+        "web_accessible_resources": [{
+            "resources": ["images/*"],
+            "matches": ["<all_urls>"]
+        }]
     }
