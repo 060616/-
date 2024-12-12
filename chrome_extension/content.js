@@ -120,3 +120,20 @@ window.checkExtensionStatus = () => {
         isRuntimeReady
     };
 };
+
+// 在消息监听器中添加更详细的日志
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    console.log('content script收到消息:', message);
+
+    if (message.type === 'ping') {
+        console.log('收到ping消息，准备响应');
+        const response = {
+            status: 'ok',
+            ready: isInitialized,
+            timestamp: Date.now()
+        };
+        console.log('发送pong响应:', response);
+        sendResponse(response);
+        return true;
+    }
+});

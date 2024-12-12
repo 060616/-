@@ -25,10 +25,12 @@
             while (retries < maxRetries) {
                 try {
                     console.log(`尝试连接content script (第${retries + 1}次)`);
+                    console.log(`尝试发送ping消息到tabId: ${tabId}`);
                     const response = await chrome.tabs.sendMessage(tabId, { 
                         type: 'ping',
                         timestamp: Date.now() 
                     });
+                    console.log('收到ping响应:', response);
                     
                     if (response?.status === 'ok' && response?.ready) {
                         console.log('content script就绪');
