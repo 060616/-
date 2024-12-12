@@ -142,6 +142,10 @@
             });
             return true; // 保持消息通道开放
         }
+        if (request.action === 'getTabId') {
+            sendResponse({ tabId: sender.tab.id });
+            return true;
+        }
     });
     
     // 生成卡片的函数
