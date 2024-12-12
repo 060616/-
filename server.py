@@ -5,6 +5,7 @@ import os
 import time
 import hashlib
 from io import BytesIO
+import traceback
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})  # 确保这行配置正确
@@ -44,6 +45,8 @@ def generate_card():
     """生成分享卡片"""
     try:
         data = request.get_json()
+        print(f"[DEBUG] 接收到请求数据: {data}")  # 添加请求数据日志
+        
         text = data.get('text', '').strip()
         url = data.get('url', '').strip()
 
@@ -74,23 +77,25 @@ def generate_card():
         
         # 文本换行处理
         def wrap_text(text, font, max_width):
+            words = text.split()
             lines = []
             current_line = []
-            current_width = 0
             
-            for char in text:
-                char_width = font.getsize(char)[0]
-                if current_width + char_width <= max_width:
-                    current_line.append(char)
-                    current_width += char_width
+            for word in words:
+                # 使用 getbbox() 替代 getsize()
+                word_width = font.getbbox(word + ' ')[2]  # [2]获取宽度
+                
+                current_width = font.getbbox(' '.join(current_line))[2] if current_line else 0
+                
+                if current_width + word_width <= max_width:
+                    current_line.append(word)
                 else:
-                    lines.append(''.join(current_line))
-                    current_line = [char]
-                    current_width = char_width
+                    lines.append(' '.join(current_line))
+                    current_line = [word]
             
             if current_line:
-                lines.append(''.join(current_line))
-            
+                lines.append(' '.join(current_line))
+                
             return lines
 
         # 绘制文本内容
@@ -98,7 +103,10 @@ def generate_card():
         lines = wrap_text(text, text_font, text_width)
         for line in lines[:8]:  # 最多显示8行
             draw.text((padding, y), line, font=text_font, fill='#333333')
-            y += text_font.getsize(line)[1] + 10
+            # 使用 getbbox() 替代 getsize()
+            bbox = text_font.getbbox(line)
+            text_height = bbox[3] - bbox[1]  # bottom - top
+            y += text_height + 10
 
         # 绘制来源URL
         if url:
@@ -110,17 +118,24 @@ def generate_card():
         filename = hashlib.md5(f"{text}{url}{time.time()}".encode()).hexdigest() + ".png"
         filepath = os.path.join(SAVE_DIR, filename)
         
-        # 保存图片
+        # 保存图片前打印信息
+        print(f"[DEBUG] 准备保存图片到: {filepath}")
         img.save(filepath, "PNG")
-
-        # 返回图片URL
-        image_url = f"http://localhost:8000/images/{filename}"  # 注意这里改成了8000端口
+        print(f"[DEBUG] 图片已保存")
+        
+        # 返回前打印URL
+        image_url = f"http://localhost:8000/images/{filename}"
+        print(f"[DEBUG] 返回图片URL: {image_url}")
+        
         return jsonify({
-            "imageUrl": image_url
+            "imageUrl": image_url,
+            "status": "success"  # 添加状态字段
         })
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print(f"[ERROR] 生成图片失败: {str(e)}")
+        print(f"[ERROR] 详细错误: {traceback.format_exc()}")
+        return jsonify({"error": str(e), "status": "error"}), 500
 
 @app.route('/images/<filename>')
 def serve_image(filename):
