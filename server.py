@@ -127,10 +127,14 @@ def generate_card():
         image_url = f"http://localhost:8000/images/{filename}"
         print(f"[DEBUG] 返回图片URL: {image_url}")
         
-        return jsonify({
+        # 在返回响应前添加详细日志
+        response_data = {
             "imageUrl": image_url,
-            "status": "success"  # 添加状态字段
-        })
+            "status": "success"
+        }
+        print(f"[DEBUG] 准备发送响应: {response_data}")
+        print(f"[DEBUG] 响应头信息: {dict(request.headers)}")
+        return jsonify(response_data)
 
     except Exception as e:
         print(f"[ERROR] 生成图片失败: {str(e)}")

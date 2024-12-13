@@ -82,7 +82,7 @@ async function initialize() {
         currentTabId = await waitForTabId();
         isRuntimeReady = true;
         
-        // 设置初始化完成标志
+        // 设置���始化完成标志
         isInitialized = true;
         console.log('初始化完成，tabId:', currentTabId);
         
@@ -135,7 +135,20 @@ window.checkExtensionStatus = () => {
 
 // 在消息监听器中添加更详细的日志
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    console.log('content script收到消息:', message);
+    console.log('[DEBUG] content script收到消息:', {
+        message,
+        sender,
+        timestamp: new Date().toISOString(),
+        initStatus: isInitialized,
+        currentTab: currentTabId
+    });
+
+    if (message.action === "cardGenerated") {
+        console.log('[DEBUG] 收到卡片生成完成消息:', message);
+        // ... 处理逻辑
+        sendResponse({ status: 'received' });
+        return true;
+    }
 
     if (message.type === 'ping') {
         console.log('收到ping消息，准备响应');

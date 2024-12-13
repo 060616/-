@@ -67,11 +67,10 @@
                     throw new Error("无法连接到页面内容脚本");
                 }
                 
-                // 确保在这里return，不继续执行
                 console.log("选中的文本:", info.selectionText);
                 console.log("当前URL:", tab.url);
                 
-                await generateCard(info.selectionText, tab.url);
+                await generateCard(info.selectionText, tab.url, tab);
                 
             } catch (error) {
                 console.error("操作失败:", error);
@@ -151,10 +150,11 @@
     });
     
     // 生成卡片的函数
-    async function generateCard(text, url) {
+    async function generateCard(text, url, tab) {
         console.log("开始生成卡片", {
-            text: text.substring(0, 100) + "...", // 避免日志过长
+            text: text.substring(0, 100) + "...",
             url,
+            tabId: tab.id,
             timestamp: new Date().toISOString()
         });
         try {
@@ -168,7 +168,7 @@
             });
             
             if (!statusCheck.ok) {
-                throw new Error("服务器未启动或无法连接");
+                throw new Error("服务器未启动无法连接");
             }
             
             console.log("开始发送生成请求...");
@@ -199,9 +199,21 @@
             }
             
             // 广播生成成功消息
-            chrome.runtime.sendMessage({
+            chrome.tabs.sendMessage(tab.id, {
                 action: "cardGenerated",
                 imageUrl: data.imageUrl
+            }, response => {
+                console.log('[DEBUG] 发送cardGenerated消息到标签页:', {
+                    tabId: tab.id,
+                    action: "cardGenerated",
+                    imageUrl: data.imageUrl,
+                    timestamp: new Date().toISOString()
+                });
+                if (chrome.runtime.lastError) {
+                    console.error('[ERROR] 发送消息失败:', chrome.runtime.lastError);
+                } else {
+                    console.log('[DEBUG] 消息发送成功，响应:', response);
+                }
             });
             
         } catch (error) {
