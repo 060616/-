@@ -32,5 +32,8 @@
         "web_accessible_resources": [{
             "resources": ["images/*"],
             "matches": ["<all_urls>"]
+        }, {
+            "resources": ["display.js", "card-preview.css"],
+            "matches": ["<all_urls>"]
         }]
     }

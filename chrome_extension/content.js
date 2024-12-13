@@ -98,12 +98,112 @@ async function initialize() {
     }
 }
 
-// 页面加载完成时初始化
+// 添加事件分发机制
+const eventBus = {
+    listeners: new Map(),
+    
+    on(event, callback) {
+        if (!this.listeners.has(event)) {
+            this.listeners.set(event, new Set());
+        }
+        this.listeners.get(event).add(callback);
+    },
+    
+    off(event, callback) {
+        const callbacks = this.listeners.get(event);
+        if (callbacks) {
+            callbacks.delete(callback);
+        }
+    },
+    
+    emit(event, data) {
+        const callbacks = this.listeners.get(event);
+        if (callbacks) {
+            callbacks.forEach(callback => {
+                try {
+                    callback(data);
+                } catch (error) {
+                    console.error(`[EventBus] 事件处理错误 (${event}):`, error);
+                }
+            });
+        }
+    }
+};
+
+// 修改消息监听器
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    console.log('content script收到消息:', message);
+
+    if (message.type === 'ping') {
+        handlePingMessage(sendResponse);
+        return true;
+    }
+    
+    if (message.type === 'showPreview') {
+        handlePreviewMessage(message, sendResponse);
+        return true;
+    }
+});
+
+// 处理ping消息
+function handlePingMessage(sendResponse) {
+    console.log('收到ping消息，准备响应');
+    const response = {
+        status: 'ok',
+        ready: isInitialized,
+        timestamp: Date.now()
+    };
+    console.log('发送pong响应:', response);
+    sendResponse(response);
+}
+
+// 处理预览消息
+async function handlePreviewMessage(message, sendResponse) {
+    try {
+        if (!message.imageUrl) {
+            throw new Error('缺少图片URL');
+        }
+        
+        // 触发预览显示事件
+        eventBus.emit('showPreview', message.imageUrl);
+        
+        sendResponse({ status: 'ok' });
+        
+    } catch (error) {
+        console.error('[Preview] 显示预览失败:', error);
+        sendResponse({ 
+            status: 'error',
+            error: error.message
+        });
+    }
+}
+
+// 错误处理
+window.addEventListener('card-preview-error', (event) => {
+    const { error, type } = event.detail;
+    
+    console.error(`[CardPreview] ${type}:`, error);
+    
+    // 发送错误消息到background
+    safeSendMessage({
+        action: 'previewError',
+        error: error.message,
+        type
+    }).catch(console.error);
+});
+
+// 初始化display模块
+import { initializeDisplay } from './display.js';
 document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM加载完成，开始初始化');
+    
+    // 初始化基础功能
     initialize().catch(error => {
         console.error('初始化过程出错:', error);
     });
+    
+    // 初始化显示模块
+    initializeDisplay();
 });
 
 // 修改现有的事件监听器，添加初始化检查
@@ -132,33 +232,3 @@ window.checkExtensionStatus = () => {
         isRuntimeReady
     };
 };
-
-// 在消息监听器中添加更详细的日志
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    console.log('[DEBUG] content script收到消息:', {
-        message,
-        sender,
-        timestamp: new Date().toISOString(),
-        initStatus: isInitialized,
-        currentTab: currentTabId
-    });
-
-    if (message.action === "cardGenerated") {
-        console.log('[DEBUG] 收到卡片生成完成消息:', message);
-        // ... 处理逻辑
-        sendResponse({ status: 'received' });
-        return true;
-    }
-
-    if (message.type === 'ping') {
-        console.log('收到ping消息，准备响应');
-        const response = {
-            status: 'ok',
-            ready: isInitialized,
-            timestamp: Date.now()
-        };
-        console.log('发送pong响应:', response);
-        sendResponse(response);
-        return true;
-    }
-});

@@ -1,0 +1,99 @@
+:root {
+    --card-preview-bg: rgba(0, 0, 0, 0.75);
+    --card-preview-content-bg: #fff;
+    --card-preview-border-radius: 8px;
+    --card-preview-padding: 20px;
+    --card-preview-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.card-preview-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: var(--card-preview-bg);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 999999;
+}
+
+.card-preview-container.visible {
+    display: flex;
+    animation: fadeIn 0.3s ease-out;
+}
+
+.card-preview-content {
+    background: var(--card-preview-content-bg);
+    padding: var(--card-preview-padding);
+    border-radius: var(--card-preview-border-radius);
+    box-shadow: var(--card-preview-shadow);
+    position: relative;
+    max-width: 90%;
+    max-height: 90%;
+    overflow: auto;
+    transform: translateY(20px);
+    opacity: 0;
+    transition: transform 0.3s ease-out, opacity 0.3s ease-out;
+}
+
+.card-preview-container.visible .card-preview-content {
+    transform: translateY(0);
+    opacity: 1;
+}
+
+.card-preview-image {
+    max-width: 100%;
+    height: auto;
+    display: block;
+}
+
+.card-preview-close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 5px;
+    color: #666;
+}
+
+.card-preview-error {
+    display: none;
+    color: #ff4d4f;
+    margin-top: 10px;
+    text-align: center;
+}
+
+.card-preview-container.loading::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 40px;
+    height: 40px;
+    margin: -20px 0 0 -20px;
+    border: 3px solid #f3f3f3;
+    border-top: 3px solid #3498db;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+@media (max-width: 768px) {
+    .card-preview-content {
+        padding: 15px;
+        max-width: 95%;
+    }
+} 
