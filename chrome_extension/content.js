@@ -47,12 +47,24 @@ async function safeSendMessage(message) {
     }
     
     try {
-        return await chrome.runtime.sendMessage({
+        console.log('[DEBUG] 准备发送消息:', {
+            message,
+            tabId: currentTabId
+        });
+        
+        const response = await chrome.runtime.sendMessage({
             ...message,
             tabId: currentTabId
         });
+        
+        console.log('[DEBUG] 消息发送成功，响应:', response);
+        return response;
+        
     } catch (error) {
-        console.warn('消息发送失败:', error);
+        console.warn('[ERROR] 消息发送失败:', {
+            error: error.toString(),
+            tabId: currentTabId
+        });
     }
 }
 
