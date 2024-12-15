@@ -6,6 +6,13 @@ let currentTabId = null;
 let isInitialized = false;
 let isRuntimeReady = false;
 
+// 重试配置
+const INIT_RETRY_CONFIG = {
+    maxRetries: 3,
+    retryInterval: 1000,
+    currentRetry: 0
+};
+
 // 检查runtime是否可用
 function isRuntimeAvailable() {
     return typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage;
@@ -69,20 +76,20 @@ async function safeSendMessage(message) {
 }
 
 // 初始化函数
-async function initialize() {
+async function initialize(retryConfig = INIT_RETRY_CONFIG) {
     if (isInitialized) {
         console.log('已经完成初始化');
         return;
     }
 
-    console.log('开始初始化...');
+    console.log('开始初始化...尝试���数:', retryConfig.currentRetry + 1);
     
     try {
         // 等待获取tabId
         currentTabId = await waitForTabId();
         isRuntimeReady = true;
         
-        // 设置���始化完成标志
+        // 设置初始化完成标志
         isInitialized = true;
         console.log('初始化完成，tabId:', currentTabId);
         
@@ -94,9 +101,28 @@ async function initialize() {
         
     } catch (error) {
         console.error('初始化失败:', error);
-        // 可以在这里添加重试逻辑或者用户提示
+        
+        // 自动重试逻辑
+        if (retryConfig.currentRetry < retryConfig.maxRetries) {
+            console.log(`将在 ${retryConfig.retryInterval}ms 后重试初始化...`);
+            setTimeout(() => {
+                initialize({
+                    ...retryConfig,
+                    currentRetry: retryConfig.currentRetry + 1
+                });
+            }, retryConfig.retryInterval);
+        } else {
+            console.error('初始化重试次数已达上限，放弃初始化');
+            // 这里可以触发一个事件通知UI层显示错误状态
+            window.dispatchEvent(new CustomEvent('extension-init-failed', {
+                detail: { error: error.message }
+            }));
+        }
     }
 }
+
+// 立即开始初始��
+initialize().catch(console.error);
 
 // 添加事件分发机制
 const eventBus = {
@@ -157,15 +183,124 @@ function handlePingMessage(sendResponse) {
     sendResponse(response);
 }
 
-// 处理预览消息
+// Display模块（原display.js的功能）
+const Display = (() => {
+    // DOM引用存储
+    const domRefs = new WeakMap();
+
+    // 创建预览容器
+    function createPreviewContainer() {
+        const container = document.createElement('div');
+        container.className = 'card-preview-container';
+        container.innerHTML = `
+            <div class="card-preview-content">
+                <img class="card-preview-image" alt="预览图片">
+                <button class="card-preview-close">关闭</button>
+                <div class="card-preview-error"></div>
+            </div>
+        `;
+        document.body.appendChild(container);
+        return container;
+    }
+
+    // 图片加载函数
+    function loadImage(url) {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => resolve();
+            img.onerror = () => reject(new Error('图片加载失败'));
+            img.src = url;
+        });
+    }
+
+    // 错误处理
+    function handlePreviewError(error) {
+        console.error('[Display] 预览显示失败:', error);
+        
+        const refs = domRefs.get(window);
+        if (refs) {
+            const errorEl = refs.container.querySelector('.card-preview-error');
+            errorEl.textContent = '预览加载失败,请重试';
+            errorEl.style.display = 'block';
+        }
+        
+        window.dispatchEvent(new CustomEvent('card-preview-error', {
+            detail: { error, type: 'PREVIEW_ERROR' }
+        }));
+    }
+
+    // 绑定事件
+    function bindEvents() {
+        const refs = domRefs.get(window);
+        if (!refs) return;
+        
+        refs.closeButton.addEventListener('click', () => {
+            refs.container.classList.remove('visible');
+        });
+        
+        // 添加错误恢复机制
+        window.addEventListener('card-preview-retry', () => {
+            const errorEl = refs.container.querySelector('.card-preview-error');
+            errorEl.style.display = 'none';
+        });
+    }
+
+    return {
+        initialize() {
+            try {
+                const container = createPreviewContainer();
+                domRefs.set(window, {
+                    container,
+                    previewImage: container.querySelector('.card-preview-image'),
+                    closeButton: container.querySelector('.card-preview-close')
+                });
+                
+                bindEvents();
+                
+            } catch (error) {
+                console.error('[Display] 初始化失败:', error);
+                window.dispatchEvent(new CustomEvent('card-preview-error', {
+                    detail: { error, type: 'INIT_ERROR' }
+                }));
+            }
+        },
+
+        async showPreview(imageUrl) {
+            try {
+                const refs = domRefs.get(window);
+                if (!refs) {
+                    throw new Error('DOM引用未初始化');
+                }
+                
+                const { container, previewImage } = refs;
+                
+                // 显示加载状态
+                container.classList.add('loading');
+                
+                // 加载图片
+                await loadImage(imageUrl);
+                
+                // 更新图片并显示
+                previewImage.src = imageUrl;
+                container.classList.remove('loading');
+                container.classList.add('visible');
+                
+            } catch (error) {
+                handlePreviewError(error);
+            }
+        }
+    };
+})();
+
+// 修改消息监听器中的预览处理
 async function handlePreviewMessage(message, sendResponse) {
     try {
         if (!message.imageUrl) {
             throw new Error('缺少图片URL');
         }
         
-        // 触发预览显示事件
-        eventBus.emit('showPreview', message.imageUrl);
+        // 使用Display模块的showPreview方法
+        await Display.showPreview(message.imageUrl);
         
         sendResponse({ status: 'ok' });
         
@@ -178,32 +313,10 @@ async function handlePreviewMessage(message, sendResponse) {
     }
 }
 
-// 错误处理
-window.addEventListener('card-preview-error', (event) => {
-    const { error, type } = event.detail;
-    
-    console.error(`[CardPreview] ${type}:`, error);
-    
-    // 发送错误消息到background
-    safeSendMessage({
-        action: 'previewError',
-        error: error.message,
-        type
-    }).catch(console.error);
-});
-
-// 初始化display模块
-import { initializeDisplay } from './display.js';
+// 在DOMContentLoaded中初始化Display模块
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('DOM加载完成，开始初始化');
-    
-    // 初始化基础功能
-    initialize().catch(error => {
-        console.error('初始化过程出错:', error);
-    });
-    
-    // 初始化显示模块
-    initializeDisplay();
+    console.log('DOM加载完成，初始化显示模块');
+    Display.initialize();
 });
 
 // 修改现有的事件监听器，添加初始化检查
@@ -224,11 +337,12 @@ document.addEventListener('visibilitychange', () => {
     }
 });
 
-// 导出状态检查函数（可选）
-window.checkExtensionStatus = () => {
+// 将export语句改为window对象属性
+window.getInitializationStatus = function() {
     return {
         isInitialized,
         currentTabId,
-        isRuntimeReady
+        isRuntimeReady,
+        retryCount: INIT_RETRY_CONFIG.currentRetry
     };
 };

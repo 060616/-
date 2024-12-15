@@ -23,6 +23,7 @@
                 "*://*.chrome.google.com/*"
             ],
             "js": ["content.js"],
+            "css": ["card-preview.css"],
             "run_at": "document_start",
             "all_frames": false
         }],
@@ -31,9 +32,6 @@
         },
         "web_accessible_resources": [{
             "resources": ["images/*"],
-            "matches": ["<all_urls>"]
-        }, {
-            "resources": ["display.js", "card-preview.css"],
             "matches": ["<all_urls>"]
         }]
     }
