@@ -170,7 +170,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     try {
         switch (message.type) {
             case 'ping':
-                // 处理ping消息，确认content script���绪状态
+                // 处理ping消息，确认content script绪状态
                 sendResponse({
                     status: 'ok',
                     ready: true,
@@ -279,7 +279,42 @@ const Display = (() => {
         }));
     }
 
-    // 绑定事件
+    // 在Display模块中添加新的下载处理函数
+    async function handleDownload(imageUrl) {
+        let blobUrl = null;
+        try {
+            // 获取图片数据
+            const response = await fetch(imageUrl);
+            if (!response.ok) {
+                throw new Error('图片下载失败');
+            }
+            
+            // 转换为blob
+            const blob = await response.blob();
+            
+            // 创建blob URL
+            blobUrl = URL.createObjectURL(blob);
+            
+            // 创建并触发下载
+            const link = document.createElement('a');
+            link.href = blobUrl;
+            link.download = 'share-card.png';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+        } catch (error) {
+            console.error('下载失败:', error);
+            handlePreviewError(error);
+        } finally {
+            // 清理blob URL
+            if (blobUrl) {
+                URL.revokeObjectURL(blobUrl);
+            }
+        }
+    }
+
+    // 修改bindEvents函数中下载按钮的处理逻辑
     function bindEvents() {
         const refs = domRefs.get(window);
         if (!refs) return;
@@ -288,14 +323,25 @@ const Display = (() => {
             refs.container.classList.remove('visible');
         });
         
-        refs.downloadButton.addEventListener('click', () => {
-            const link = document.createElement('a');
-            link.download = 'share-card.png';
-            link.href = refs.previewImage.src;
-            link.click();
+        refs.downloadButton.addEventListener('click', async () => {
+            const imageUrl = refs.previewImage.src;
+            if (!imageUrl) {
+                handlePreviewError(new Error('没有可下载的图片'));
+                return;
+            }
+            
+            refs.downloadButton.disabled = true;
+            refs.downloadButton.textContent = '下载中...';
+            
+            try {
+                await handleDownload(imageUrl);
+            } finally {
+                refs.downloadButton.disabled = false;
+                refs.downloadButton.textContent = '下载';
+            }
         });
         
-        // 添加错误恢复机制
+        // 保持原有的错误恢复机制
         window.addEventListener('card-preview-retry', () => {
             const errorEl = refs.container.querySelector('.card-preview-error');
             errorEl.style.display = 'none';
