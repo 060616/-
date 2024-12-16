@@ -82,7 +82,7 @@ async function initialize(retryConfig = INIT_RETRY_CONFIG) {
         return;
     }
 
-    console.log('开始初始化...尝试数:', retryConfig.currentRetry + 1);
+    console.log('开始初始化...尝试:', retryConfig.currentRetry + 1);
     
     try {
         // 等待获取tabId
@@ -170,7 +170,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     try {
         switch (message.type) {
             case 'ping':
-                // 处理ping消息，确认content script就绪状态
+                // 处理ping消息，确认content script���绪状态
                 sendResponse({
                     status: 'ok',
                     ready: true,
@@ -242,7 +242,10 @@ const Display = (() => {
         container.innerHTML = `
             <div class="card-preview-content">
                 <img class="card-preview-image" alt="预览图片">
-                <button class="card-preview-close">关闭</button>
+                <div class="card-preview-actions">
+                    <button class="card-preview-download">下载</button>
+                    <button class="card-preview-close">关闭</button>
+                </div>
                 <div class="card-preview-error"></div>
             </div>
         `;
@@ -285,6 +288,13 @@ const Display = (() => {
             refs.container.classList.remove('visible');
         });
         
+        refs.downloadButton.addEventListener('click', () => {
+            const link = document.createElement('a');
+            link.download = 'share-card.png';
+            link.href = refs.previewImage.src;
+            link.click();
+        });
+        
         // 添加错误恢复机制
         window.addEventListener('card-preview-retry', () => {
             const errorEl = refs.container.querySelector('.card-preview-error');
@@ -299,7 +309,8 @@ const Display = (() => {
                 domRefs.set(window, {
                     container,
                     previewImage: container.querySelector('.card-preview-image'),
-                    closeButton: container.querySelector('.card-preview-close')
+                    closeButton: container.querySelector('.card-preview-close'),
+                    downloadButton: container.querySelector('.card-preview-download')
                 });
                 
                 bindEvents();

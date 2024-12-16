@@ -122,8 +122,24 @@
             return data.imageUrl;
             
         } catch (error) {
-            console.error('卡片生成失败:', error);
-            throw error;
+            // 确保能拿到有用的错误信息
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            // 输出更详细的错误信息
+            console.error("卡片生成失败，具体原因:", errorMessage);
+            
+            // 使用Chrome通知API提供用户反馈
+            chrome.notifications.create({
+                type: 'basic',
+                title: '操作失败',
+                message: '卡片生成失败，请稍后重试',
+                iconUrl: 'icon.png'
+            });
+            
+            // 向content script发送错误消息以显示错误UI
+            chrome.tabs.sendMessage(tabId, {
+                type: 'showError',
+                error: '生成失败，请重试'
+            });
         }
     }
     
