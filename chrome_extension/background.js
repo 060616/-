@@ -93,9 +93,33 @@
         }
     });
     
-    // 修改后的generateCard函数，直接处理生成逻辑
+    // 添加获取域名的辅助函数
+    function getDomainFromUrl(url) {
+        try {
+            const urlObj = new URL(url);
+            return urlObj.hostname;
+        } catch (e) {
+            return url;
+        }
+    }
+    
+    // 修改后的generateCard函数
     async function generateCard(text, url) {
         try {
+            // 获取当前页面标题
+            const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
+            let title = '';
+            
+            try {
+                const [{result}] = await chrome.scripting.executeScript({
+                    target: {tabId: tab.id},
+                    func: () => document.title
+                });
+                title = result || getDomainFromUrl(url);
+            } catch (e) {
+                title = getDomainFromUrl(url);
+            }
+
             const response = await fetch('http://localhost:8000/generate', {
                 method: 'POST',
                 headers: {
@@ -103,7 +127,8 @@
                 },
                 body: JSON.stringify({
                     text,
-                    url
+                    url,
+                    title
                 })
             });
 
@@ -142,7 +167,7 @@
                 console.error('预览显示失败:', message.error);
                 chrome.notifications.create({
                     type: 'basic',
-                    title: '预览失败',
+                    title: '���览失败',
                     message: message.error,
                     iconUrl: 'icon.png'
                 });

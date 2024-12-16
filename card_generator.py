@@ -31,6 +31,20 @@ class Config:
         "templates/bg2.png",
         "templates/bg3.png"
     ]
+    
+    # 新增引号配置
+    QUOTE_ICON_PATH = "icons/quote.png"
+    QUOTE_SIZE = 60
+    QUOTE_MARGIN_TOP = 40
+    QUOTE_MARGIN_LEFT = 40
+    
+    # 新增底部文字配置
+    TITLE_FONT_SIZE = 24
+    URL_FONT_SIZE = 20
+    BOTTOM_TEXT_MARGIN = 30
+    
+    # 调整文字边距
+    TEXT_MARGIN_TOP = 120  # 为引号留出空间
 
 class CardGenerator:
     """卡片生成器主类"""
@@ -76,7 +90,7 @@ class CardGenerator:
             
         return font_size
     
-    def generate_card(self, text: str, url: str, bg_template_index: int = 0) -> Image.Image:
+    def generate_card(self, text: str, url: str, title: str = "", bg_template_index: int = 0) -> Image.Image:
         """生成分享卡片"""
         # 参数验证
         if len(text) > self.config.MAX_TEXT_LENGTH:
@@ -89,30 +103,54 @@ class CardGenerator:
         bg_path = self.config.BG_TEMPLATES[bg_template_index]
         card = Image.open(bg_path).resize((self.config.CARD_WIDTH, self.config.CARD_HEIGHT))
         
+        # 添加引号图标
+        quote_icon = Image.open(self.config.QUOTE_ICON_PATH)
+        quote_icon = quote_icon.resize((self.config.QUOTE_SIZE, self.config.QUOTE_SIZE))
+        card.paste(quote_icon, (self.config.QUOTE_MARGIN_LEFT, self.config.QUOTE_MARGIN_TOP), quote_icon)
+        
         # 生成二维码
         qr_img = self.generate_qrcode(url)
-        
-        # 计算二维码位置
         qr_x = (self.config.CARD_WIDTH - self.config.QR_SIZE) // 2
         qr_y = self.config.CARD_HEIGHT - self.config.QR_SIZE - self.config.QR_MARGIN
-        
-        # 粘贴二维码
         card.paste(qr_img, (qr_x, qr_y))
         
-        # 添加文字
         draw = ImageDraw.Draw(card)
+        
+        # 绘制主文本
         max_text_width = self.config.CARD_WIDTH - 2 * self.config.TEXT_MARGIN
-        max_text_height = qr_y - 2 * self.config.TEXT_MARGIN
+        max_text_height = qr_y - self.config.TEXT_MARGIN_TOP - self.config.BOTTOM_TEXT_MARGIN
         
         font_size = self._calculate_font_size(text, max_text_width, max_text_height)
         font = ImageFont.truetype(self.config.FONT_PATH, font_size)
         
-        # 计算文字位置使其居中
         text_bbox = font.getbbox(text)
         text_x = (self.config.CARD_WIDTH - text_bbox[2]) // 2
-        text_y = (qr_y - text_bbox[3]) // 2
+        text_y = self.config.TEXT_MARGIN_TOP + (max_text_height - text_bbox[3]) // 2
         
         draw.text((text_x, text_y), text, font=font, fill="black")
+        
+        # 绘制底部网页信息
+        title_font = ImageFont.truetype(self.config.FONT_PATH, self.config.TITLE_FONT_SIZE)
+        url_font = ImageFont.truetype(self.config.FONT_PATH, self.config.URL_FONT_SIZE)
+        
+        # 绘制网页标题（如果有）
+        if title:
+            title_bbox = title_font.getbbox(title)
+            title_x = (self.config.CARD_WIDTH - title_bbox[2]) // 2
+            title_y = qr_y - self.config.BOTTOM_TEXT_MARGIN * 2
+            draw.text((title_x, title_y), title, font=title_font, fill="#333333")
+            
+            # URL 在标题下方
+            url_bbox = url_font.getbbox(url)
+            url_x = (self.config.CARD_WIDTH - url_bbox[2]) // 2
+            url_y = title_y + title_bbox[3] + 10
+        else:
+            # 没有标题时，URL 居中显示
+            url_bbox = url_font.getbbox(url)
+            url_x = (self.config.CARD_WIDTH - url_bbox[2]) // 2
+            url_y = qr_y - self.config.BOTTOM_TEXT_MARGIN * 2
+            
+        draw.text((url_x, url_y), url, font=url_font, fill="#666666")
         
         return card
     
@@ -122,7 +160,7 @@ class CardGenerator:
         output_buffer = io.BytesIO()
         card.save(output_buffer, format='PNG', optimize=True, quality=85)
         
-        # ���果文件大小超过1MB,进行进一步压缩
+        # 果文件大小超过1MB,进行进一步压缩
         if output_buffer.tell() > 1024 * 1024:
             card = card.resize((int(card.width * 0.8), int(card.height * 0.8)))
             card.save(output_path, format='PNG', optimize=True, quality=80)

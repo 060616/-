@@ -52,13 +52,14 @@ def generate_card():
         data = request.get_json()
         text = data.get('text', '').strip()
         url = data.get('url', '').strip()
+        title = data.get('title', '').strip()
 
         # 参数验证
         if not text:
             return jsonify({"error": "文本内容不能为空"}), 400
             
         # 使用 CardGenerator 生成卡片
-        card = card_generator.generate_card(text, url)
+        card = card_generator.generate_card(text, url, title)
         
         # 将图片转换为base64
         buffered = BytesIO()
