@@ -7,11 +7,12 @@ import hashlib
 from io import BytesIO
 import traceback
 from card_generator import CardGenerator
+import base64  # 添加base64模块导入
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})  # 确保这行配置正确
 
-# 配置
+# 配置v
 SAVE_DIR = "generated_cards"
 if not os.path.exists(SAVE_DIR):
     os.makedirs(SAVE_DIR)
@@ -59,16 +60,13 @@ def generate_card():
         # 使用 CardGenerator 生成卡片
         card = card_generator.generate_card(text, url)
         
-        # 生成文件名和保存路径
-        filename = hashlib.md5(f"{text}{url}{time.time()}".encode()).hexdigest() + ".png"
-        filepath = os.path.join(SAVE_DIR, filename)
+        # 将图片转换为base64
+        buffered = BytesIO()
+        card.save(buffered, format="PNG")
+        img_str = base64.b64encode(buffered.getvalue()).decode()
         
-        # 保存卡片
-        card_generator.save_card(card, filepath)
-        
-        image_url = f"http://localhost:8000/images/{filename}"
         return jsonify({
-            "imageUrl": image_url,
+            "imageData": img_str,
             "status": "success"
         })
 

@@ -71,13 +71,13 @@
                 console.log("当前URL:", tab.url);
                 
                 // 直接调用生成函数，不再发送消息给content script
-                const imageUrl = await generateCard(info.selectionText, tab.url);
+                const result = await generateCard(info.selectionText, tab.url);
                 
                 // 生成成功后，发送预览消息
-                if (imageUrl) {
+                if (result && result.imageData) {
                     await sendMessageWithConfirmation(tab.id, {
                         type: 'showPreview',
-                        imageUrl
+                        imageData: result.imageData
                     });
                 }
                 
@@ -107,39 +107,24 @@
                 })
             });
 
-            // 检查响应状态
             if (!response.ok) {
                 throw new Error(`服务器响应错误: ${response.status}`);
             }
 
             const data = await response.json();
             
-            // 验证返回数据
-            if (!data || !data.imageUrl) {
+            if (!data || !data.imageData) {
                 throw new Error('服务器返回的数据格式无效');
             }
 
-            return data.imageUrl;
+            // 直接返回 base64 数据，让 content script 处理
+            return {
+                imageData: data.imageData
+            };
             
         } catch (error) {
-            // 确保能拿到有用的错误信息
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            // 输出更详细的错误信息
-            console.error("卡片生成失败，具体原因:", errorMessage);
-            
-            // 使用Chrome通知API提供用户反馈
-            chrome.notifications.create({
-                type: 'basic',
-                title: '操作失败',
-                message: '卡片生成失败，请稍后重试',
-                iconUrl: 'icon.png'
-            });
-            
-            // 向content script发送错误消息以显示错误UI
-            chrome.tabs.sendMessage(tabId, {
-                type: 'showError',
-                error: '生成失败，请重试'
-            });
+            console.error("卡片生成失败，具体原因:", error);
+            throw error;
         }
     }
     

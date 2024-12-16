@@ -170,7 +170,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     try {
         switch (message.type) {
             case 'ping':
-                // 处理ping消息，确认content script绪状态
+                // 处理ping消息，确认content script���态
                 sendResponse({
                     status: 'ok',
                     ready: true,
@@ -211,8 +211,8 @@ async function handlePreviewMessage(message, sendResponse) {
             timestamp: Date.now()
         });
         
-        // 显示预览
-        await Display.showPreview(message.imageUrl);
+        // 显示预览，现在直接传入imageData
+        await Display.showPreview(message.imageData);
         
         // 通知预览成功
         await safeSendMessage({
@@ -232,8 +232,8 @@ async function handlePreviewMessage(message, sendResponse) {
 
 // Display模块（原display.js的功能）
 const Display = (() => {
-    // DOM引用存储
     const domRefs = new WeakMap();
+    const imageDataCache = new Map();
 
     // 创建预览容器
     function createPreviewContainer() {
@@ -279,25 +279,60 @@ const Display = (() => {
         }));
     }
 
-    // 在Display模块中添加新的下载处理函数
-    async function handleDownload(imageUrl) {
-        let blobUrl = null;
+    // 修改showPreview函数
+    async function showPreview(imageData) {
         try {
-            // 获取图片数据
-            const response = await fetch(imageUrl);
-            if (!response.ok) {
-                throw new Error('图片下载失败');
+            const refs = domRefs.get(window);
+            if (!refs) {
+                throw new Error('DOM引用未初始化');
             }
             
-            // 转换为blob
-            const blob = await response.blob();
+            const { container, previewImage } = refs;
             
-            // 创建blob URL
-            blobUrl = URL.createObjectURL(blob);
+            // 显示加载状态
+            container.classList.add('loading');
             
-            // 创建并触发下载
+            // 创建 blob URL
+            const blob = await fetch(`data:image/png;base64,${imageData}`).then(r => r.blob());
+            const imageUrl = URL.createObjectURL(blob);
+            
+            // 存储 blob URL 以便后续清理
+            if (!window.blobUrls) {
+                window.blobUrls = new Map();
+            }
+            window.blobUrls.set(imageUrl, blob);
+            
+            // 加载图片
+            await loadImage(imageUrl);
+            
+            // 更新图片并显示
+            previewImage.src = imageUrl;
+            
+            // 缓存图片数据
+            imageDataCache.set(imageUrl, imageData);
+            
+            container.classList.remove('loading');
+            container.classList.add('visible');
+            
+            return imageUrl;
+            
+        } catch (error) {
+            handlePreviewError(error);
+            throw error;
+        }
+    }
+
+    // 修改handleDownload函数
+    async function handleDownload(imageUrl) {
+        try {
+            const imageData = imageDataCache.get(imageUrl);
+            if (!imageData) {
+                throw new Error('找不到图片数据');
+            }
+            
+            // 直接使用base64数据创建下载链接
             const link = document.createElement('a');
-            link.href = blobUrl;
+            link.href = `data:image/png;base64,${imageData}`;
             link.download = 'share-card.png';
             document.body.appendChild(link);
             link.click();
@@ -306,11 +341,6 @@ const Display = (() => {
         } catch (error) {
             console.error('下载失败:', error);
             handlePreviewError(error);
-        } finally {
-            // 清理blob URL
-            if (blobUrl) {
-                URL.revokeObjectURL(blobUrl);
-            }
         }
     }
 
@@ -369,30 +399,8 @@ const Display = (() => {
             }
         },
 
-        async showPreview(imageUrl) {
-            try {
-                const refs = domRefs.get(window);
-                if (!refs) {
-                    throw new Error('DOM引用未初始化');
-                }
-                
-                const { container, previewImage } = refs;
-                
-                // 显示加载状态
-                container.classList.add('loading');
-                
-                // 加载图片
-                await loadImage(imageUrl);
-                
-                // 更新图片并显示
-                previewImage.src = imageUrl;
-                container.classList.remove('loading');
-                container.classList.add('visible');
-                
-            } catch (error) {
-                handlePreviewError(error);
-            }
-        }
+        showPreview,
+        handleDownload
     };
 })();
 
