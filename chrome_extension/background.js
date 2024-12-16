@@ -70,7 +70,16 @@
                 console.log("选中的文本:", info.selectionText);
                 console.log("当前URL:", tab.url);
                 
-                await generateCard(info.selectionText, tab.url, tab);
+                // 直接调用生成函数，不再发送消息给content script
+                const imageUrl = await generateCard(info.selectionText, tab.url);
+                
+                // 生成成功后，发送预览消息
+                if (imageUrl) {
+                    await sendMessageWithConfirmation(tab.id, {
+                        type: 'showPreview',
+                        imageUrl
+                    });
+                }
                 
             } catch (error) {
                 console.error("操作失败:", error);
@@ -80,153 +89,81 @@
                     message: error.message,
                     iconUrl: 'icon.png'
                 });
-                return; // 确保错误时立即返回
             }
         }
     });
     
-    // 处理来自content script的消息
-    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-        console.log("background收到消息:", request);
-        
-        if (request.type === 'generateCard') {
-            fetch('http://localhost:8000/generate', {
+    // 修改后的generateCard函数，直接处理生成逻辑
+    async function generateCard(text, url) {
+        try {
+            const response = await fetch('http://localhost:8000/generate', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    text: request.text
+                    text,
+                    url
                 })
-            })
-            .then(response => {
-                // 检查响应状态
-                console.log('响应状态:', {
-                    status: response.status,
-                    statusText: response.statusText,
-                    headers: Object.fromEntries(response.headers.entries())
-                });
-                return response.json();
-            })
-            .then(data => {
-                // 详细检查返回的数据结构
-                console.log('服务器返回的完整数据:', data);
-                
-                // 验证数据格式
-                if (!data || typeof data !== 'object') {
-                    throw new Error('服务器返回的数据格式无效');
-                }
-                
-                // 检查imageUrl字段
-                if (!data.imageUrl) {
-                    console.error('缺少imageUrl字段，完整数据:', data);
-                    throw new Error('服务器返回的数据缺少imageUrl字段');
-                }
-                
-                // 验证imageUrl格式
-                try {
-                    new URL(data.imageUrl);
-                } catch (e) {
-                    console.error('imageUrl格式无效:', data.imageUrl);
-                    throw new Error('图片URL格式无效');
-                }
-                
-                sendResponse(data);
-            })
-            .catch(error => {
-                console.error('详细错误信息:', {
-                    message: error.message,
-                    stack: error.stack,
-                    data: error.response ? error.response.data : null
-                });
-                sendResponse({error: error.message});
             });
-            return true; // 保持消息通道开放
-        }
-        if (request.action === 'getTabId') {
-            sendResponse({ tabId: sender.tab.id });
-            return true;
-        }
-    });
-    
-    // 生成卡片的函数
-    async function generateCard(text, url, tab) {
-        console.log("开始生成卡片", {
-            text: text.substring(0, 100) + "...",
-            url,
-            tabId: tab.id,
-            timestamp: new Date().toISOString()
-        });
-        try {
-            // 检查服务器状态
-            console.log("检查服务器状态...");
-            const statusCheck = await fetch("http://localhost:8000/status");
-            console.log("服务器状态检查结果:", {
-                ok: statusCheck.ok,
-                status: statusCheck.status,
-                statusText: statusCheck.statusText
-            });
-            
-            if (!statusCheck.ok) {
-                throw new Error("服务器未启动无法连接");
+
+            // 检查响应状态
+            if (!response.ok) {
+                throw new Error(`服务器响应错误: ${response.status}`);
             }
-            
-            console.log("开始发送生成请求...");
-            const response = await fetch("http://localhost:8000/generate", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({text, url})
-            });
-            
-            console.log("收到服务器响应:", {
-                ok: response.ok,
-                status: response.status,
-                statusText: response.statusText,
-                headers: Object.fromEntries(response.headers.entries())
-            });
-            
+
             const data = await response.json();
-            console.log("解析后的响应数据:", {
-                hasImageUrl: !!data.imageUrl,
-                dataKeys: Object.keys(data),
-                timestamp: new Date().toISOString()
-            });
             
-            if (!data.imageUrl) {
-                throw new Error("服务器返回的数据中没有图片URL");
+            // 验证返回数据
+            if (!data || !data.imageUrl) {
+                throw new Error('服务器返回的数据格式无效');
             }
-            
-            // 广播生成成功消息
-            chrome.tabs.sendMessage(tab.id, {
-                action: "cardGenerated",
-                imageUrl: data.imageUrl
-            }, response => {
-                console.log('[DEBUG] 发送cardGenerated消息到标签页:', {
-                    tabId: tab.id,
-                    action: "cardGenerated",
-                    imageUrl: data.imageUrl,
-                    timestamp: new Date().toISOString()
-                });
-                if (chrome.runtime.lastError) {
-                    console.error('[ERROR] 发送消息失败:', chrome.runtime.lastError);
-                } else {
-                    console.log('[DEBUG] 消息发送成功，响应:', response);
-                }
-            });
+
+            return data.imageUrl;
             
         } catch (error) {
-            console.error("生成卡片详细错误信息:", {
-                error: error.toString(),
-                stack: error.stack,
-                timestamp: new Date().toISOString(),
-                requestInfo: {
-                    text: text.substring(0, 100) + "...",
-                    url
-                }
-            });
+            console.error('卡片生成失败:', error);
             throw error;
         }
     }
     
+    // 消息监听器只处理必要的消息
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+        console.log('收到消息:', message);
+        
+        // 处理来自content script的消息
+        switch (message.type) {
+            case 'previewShown':
+                console.log('预览显示成功');
+                break;
+                
+            case 'previewFailed':
+                console.error('预览显示失败:', message.error);
+                chrome.notifications.create({
+                    type: 'basic',
+                    title: '预览失败',
+                    message: message.error,
+                    iconUrl: 'icon.png'
+                });
+                break;
+        }
+        
+        return true; // 保持消息通道开放
+    });
+    
+    // 简化版的消息发送函数
+    async function sendMessageWithConfirmation(tabId, message) {
+        try {
+            const response = await chrome.tabs.sendMessage(tabId, message);
+            
+            if (response?.error) {
+                throw new Error(response.error);
+            }
+            
+            return response;
+            
+        } catch (error) {
+            console.error('消息发送失败:', error);
+            throw error;
+        }
+    }

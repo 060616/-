@@ -82,7 +82,7 @@ async function initialize(retryConfig = INIT_RETRY_CONFIG) {
         return;
     }
 
-    console.log('开始初始化...尝试���数:', retryConfig.currentRetry + 1);
+    console.log('开始初始化...尝试数:', retryConfig.currentRetry + 1);
     
     try {
         // 等待获取tabId
@@ -121,7 +121,7 @@ async function initialize(retryConfig = INIT_RETRY_CONFIG) {
     }
 }
 
-// 立即开始初始��
+// 立即开始初始化
 initialize().catch(console.error);
 
 // 添加事件分发机制
@@ -156,31 +156,78 @@ const eventBus = {
     }
 };
 
-// 修改消息监听器
+// 消息监听器，移除generateCard处理
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log('content script收到消息:', message);
 
-    if (message.type === 'ping') {
-        handlePingMessage(sendResponse);
-        return true;
+    // 所有消息都需要立即确认接收
+    const immediateResponse = {
+        received: true,
+        timestamp: Date.now(),
+        messageId: message.messageId
+    };
+    
+    try {
+        switch (message.type) {
+            case 'ping':
+                // 处理ping消息，确认content script就绪状态
+                sendResponse({
+                    status: 'ok',
+                    ready: true,
+                    ...immediateResponse
+                });
+                break;
+                
+            case 'showPreview':
+                // 处理预览显示
+                handlePreviewMessage(message, sendResponse);
+                break;
+                
+            default:
+                console.warn('未知的消息类型:', message.type);
+                sendResponse({
+                    ...immediateResponse,
+                    error: 'Unknown message type'
+                });
+        }
+    } catch (error) {
+        console.error('消息处理错误:', error);
+        sendResponse({
+            ...immediateResponse,
+            error: error.message
+        });
     }
     
-    if (message.type === 'showPreview') {
-        handlePreviewMessage(message, sendResponse);
-        return true;
-    }
+    return true; // 保持消息通道开放
 });
 
-// 处理ping消息
-function handlePingMessage(sendResponse) {
-    console.log('收到ping消息，准备响应');
-    const response = {
-        status: 'ok',
-        ready: isInitialized,
-        timestamp: Date.now()
-    };
-    console.log('发送pong响应:', response);
-    sendResponse(response);
+// 处理预览消息
+async function handlePreviewMessage(message, sendResponse) {
+    try {
+        // 立即确认接收
+        sendResponse({
+            status: 'accepted',
+            messageId: message.messageId,
+            timestamp: Date.now()
+        });
+        
+        // 显示预览
+        await Display.showPreview(message.imageUrl);
+        
+        // 通知预览成功
+        await safeSendMessage({
+            type: 'previewShown',
+            messageId: message.messageId
+        });
+        
+    } catch (error) {
+        console.error('显示预览失败:', error);
+        await safeSendMessage({
+            type: 'previewFailed',
+            messageId: message.messageId,
+            error: error.message
+        });
+    }
 }
 
 // Display模块（原display.js的功能）
@@ -292,26 +339,87 @@ const Display = (() => {
     };
 })();
 
-// 修改消息监听器中的预览处理
-async function handlePreviewMessage(message, sendResponse) {
-    try {
-        if (!message.imageUrl) {
-            throw new Error('缺少图片URL');
+// 添加消息状态管理
+const MessageManager = {
+    messages: new Map(),
+    
+    // 消息状态枚举
+    STATUS: {
+        PENDING: 'pending',
+        PROCESSING: 'processing',
+        COMPLETED: 'completed',
+        FAILED: 'failed',
+        INTERRUPTED: 'interrupted'
+    },
+    
+    // 创建新消息
+    create(messageId, data) {
+        const message = {
+            id: messageId,
+            data,
+            status: this.STATUS.PENDING,
+            timestamp: Date.now(),
+            retryCount: 0,
+            error: null
+        };
+        this.messages.set(messageId, message);
+        return message;
+    },
+    
+    // 更新消息状态
+    updateStatus(messageId, status, error = null) {
+        const message = this.messages.get(messageId);
+        if (message) {
+            message.status = status;
+            message.error = error;
+            message.lastUpdated = Date.now();
+            eventBus.emit('messageStatusChanged', { messageId, status, error });
         }
-        
-        // 使用Display模块的showPreview方法
-        await Display.showPreview(message.imageUrl);
-        
-        sendResponse({ status: 'ok' });
-        
-    } catch (error) {
-        console.error('[Preview] 显示预览失败:', error);
-        sendResponse({ 
-            status: 'error',
-            error: error.message
+    },
+    
+    // 处理页面可见性变化
+    handleVisibilityChange() {
+        const interruptedMessages = Array.from(this.messages.values())
+            .filter(msg => msg.status === this.STATUS.PROCESSING);
+            
+        interruptedMessages.forEach(msg => {
+            this.updateStatus(msg.id, this.STATUS.INTERRUPTED);
         });
     }
-}
+};
+
+// 增强事件总线
+const enhancedEventBus = {
+    ...eventBus,
+    
+    // 添加状态追踪
+    state: new Map(),
+    
+    // 设置状态
+    setState(key, value) {
+        this.state.set(key, value);
+        this.emit('stateChanged', { key, value });
+    },
+    
+    // 获取状态
+    getState(key) {
+        return this.state.get(key);
+    },
+    
+    // 异步操作状态追踪
+    async trackAsyncOperation(operationId, operation) {
+        try {
+            this.setState(`${operationId}_status`, 'processing');
+            const result = await operation();
+            this.setState(`${operationId}_status`, 'completed');
+            return result;
+        } catch (error) {
+            this.setState(`${operationId}_status`, 'failed');
+            this.setState(`${operationId}_error`, error);
+            throw error;
+        }
+    }
+};
 
 // 在DOMContentLoaded中初始化Display模块
 document.addEventListener('DOMContentLoaded', () => {
@@ -319,22 +427,34 @@ document.addEventListener('DOMContentLoaded', () => {
     Display.initialize();
 });
 
-// 修改现有的事件监听器，添加初始化检查
+// 添加页面可见性变化处理
 document.addEventListener('visibilitychange', () => {
     if (!isInitialized) {
         console.warn('扩展尚未初始化完成，忽略visibilitychange事件');
         return;
     }
 
-    if (document.visibilityState === 'visible') {
-        safeSendMessage({
-            action: "contentScriptVisible"
-        });
-    } else {
-        safeSendMessage({
-            action: "contentScriptHidden"
+    const isVisible = document.visibilityState === 'visible';
+    MessageManager.handleVisibilityChange();
+    
+    if (isVisible) {
+        // 恢复中断的操作
+        const interrupted = Array.from(MessageManager.messages.values())
+            .filter(msg => msg.status === MessageManager.STATUS.INTERRUPTED);
+            
+        interrupted.forEach(async msg => {
+            try {
+                await handlePreviewMessage(msg.data, () => {});
+            } catch (error) {
+                console.error('恢复操作失败:', error);
+            }
         });
     }
+    
+    safeSendMessage({
+        action: isVisible ? "contentScriptVisible" : "contentScriptHidden",
+        pendingMessages: Array.from(MessageManager.messages.values())
+    });
 });
 
 // 将export语句改为window对象属性
